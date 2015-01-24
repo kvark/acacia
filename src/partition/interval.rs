@@ -2,7 +2,7 @@
 
 #[cfg(any(test, feature = "arbitrary"))]
 use quickcheck::{Arbitrary, Gen};
-use partition::{Partition, Subdivide, Mid};
+use partition::{Partition, Subdivide, Mid, Pack};
 
 
 /// A half-open interval [a, b) between two points a and b
@@ -28,6 +28,18 @@ impl<T: Mid + Copy> Subdivide for Interval<T> {
         vec![
             Interval { start: self.start, end: mid },
             Interval { start: mid, end: self.end },
+        ]
+    }
+}
+
+impl<T: Mid + PartialOrd + Copy, N> Pack<N> for Interval<T> {
+    type Container = [N; 2];
+
+    fn pack<F: Fn(Self) -> N>(&self, f: F) -> [N; 2] {
+        let mid = self.start.mid(&self.end);
+        [
+            f(Interval { start: self.start, end: mid }),
+            f(Interval { start: mid, end: self.end }),
         ]
     }
 }

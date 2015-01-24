@@ -4,6 +4,7 @@ pub use partition::interval::Interval;
 pub use partition::boxes::{Box2, Box3};
 pub use partition::ncube::Ncube;
 pub use partition::unitquad::UnitQuad;
+pub use partition::container::Container;
 
 #[cfg(any(test, feature = "arbitrary"))]
 use quickcheck::TestResult;
@@ -13,6 +14,16 @@ use quickcheck::TestResult;
 pub trait Subdivide {
     /// Subdivide into smaller partitions
     fn subdivide(&self) -> Vec<Self>;
+}
+
+
+/// A type whose subdivisions can be packed in a container.
+///
+/// NOTE: this trait is merely a workaround to compensate for the lack of
+/// higher-kinded types. As soon as Rust gets these, this should change.
+pub trait Pack<N> {
+    type Container: Container<N>;
+    fn pack<F: Fn(Self) -> N>(&self, f: F) -> Self::Container;
 }
 
 
@@ -138,6 +149,7 @@ impl Mid for f32 {
 }
 
 
+pub mod container;
 mod interval;
 mod boxes;
 mod ncube;
