@@ -1,6 +1,7 @@
 //! Generic tree iterators.
 
 use traits::{Node, AssociatedData};
+use partition::Container;
 
 
 /// An iterator over the objects in a tree.
@@ -16,7 +17,8 @@ impl<'a, T> Iter<'a, T> {
 }
 
 impl<'a, T> Iterator for Iter<'a, T>
-    where T: Node<Container = Vec<T>>,
+    where T: Node,
+          <T as Node>::Container: Container<T> + 'a,
 {
     type Item = &'a <T as Node>::Object;
 

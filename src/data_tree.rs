@@ -3,8 +3,8 @@
 use std::mem;
 use std::iter::IntoIterator;
 use iter::{RecurseObjects, RecurseData, Iter};
-use traits::{NodeState, DataQuery, ObjectQuery, AssociatedData, Node, Position};
-use partition::{Partition, Pack, Container};
+use traits::{NodeState, AssociatedData, Node, Position};
+use partition::Partition;
 
 
 /// An N-dimensional tree

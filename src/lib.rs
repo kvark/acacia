@@ -4,6 +4,7 @@
 #![allow(unused_features)]
 #![feature(core, hash, rand, test)]
 
+extern crate core;
 extern crate nalgebra;
 #[macro_use]
 extern crate itertools;
