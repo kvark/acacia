@@ -1,96 +1,10 @@
-//! Dimension-unspecific tree implementations
+//! Implementation of tree with associated data.
 
 use std::mem;
-use tree::{NodeState, DataQuery, ObjectQuery, AssociatedData, Node, Position};
+use std::iter::IntoIterator;
+use iter::{RecurseObjects, RecurseData, Iter};
+use traits::{NodeState, DataQuery, ObjectQuery, AssociatedData, Node, Position};
 use partition::{Partition, Pack, Container};
-
-
-/// A pure N-dimensional tree
-pub struct PureTree<P, O, C> {
-    state: NodeState<O, C>,
-    partition: P,
-}
-
-impl<P, O, C> PureTree<P, O, C> {
-    fn empty(partition: P) -> PureTree<P, O, C> {
-        PureTree {
-            state: NodeState::Empty,
-            partition: partition,
-        }
-    }
-}
-
-impl<P, O, C> PureTree<P, O, C>
-    where O: Position,
-          P: Partition<<O as Position>::Point>
-           + Pack<Box<PureTree<P, O, C>>, Container = C>,
-          C: Container<Box<PureTree<P, O, C>>>,
-{
-    /// Construct a tree without checking the geometry of the input data
-    pub fn new<I: Iterator<Item=O>>(iter: I, partition: P) -> PureTree<P, O, C> {
-        let mut tree = PureTree::empty(partition);
-        let mut iter = iter;
-        for object in iter {
-            tree.insert(object)
-        }
-        tree
-    }
-
-    fn dispatch(&self, nodes: &mut C, object: O) {
-        nodes.index_mut(self.partition.dispatch(&object.position())).insert(object)
-    }
-
-    fn insert(&mut self, object: O) {
-        let mut tmp = NodeState::Empty;
-        mem::swap(&mut tmp, &mut self.state);
-        self.state = match tmp {
-            NodeState::Empty => NodeState::Leaf(object),
-            NodeState::Leaf(other) => {
-                let mut nodes = self.partition
-                    .pack(|p| Box::new(PureTree::empty(p)));
-                self.dispatch(&mut nodes, object);
-                self.dispatch(&mut nodes, other);
-                NodeState::Branch(nodes)
-            },
-            NodeState::Branch(mut nodes) => {
-                self.dispatch(&mut nodes, object);
-                NodeState::Branch(nodes)
-            }
-        };
-    }
-}
-
-impl<P, O, C> ObjectQuery for PureTree<P, O, C>
-    where C: Container<PureTree<P, O, C>>,
-{
-    fn query_objects<R, F>(&self, recurse: &R, f: &mut F)
-        where R: Fn(&PureTree<P, O, C>) -> bool,
-              F: FnMut(&O),
-    {
-        match self.state {
-            NodeState::Branch(ref nodes) => 
-                if recurse(self) {
-                    nodes.for_each(|node| node.query_objects(recurse, f))
-                },
-            NodeState::Leaf(ref obj) => f(obj),
-            _ => (),
-        }
-    }
-}
-
-impl<P, O, C> Node for PureTree<P, O, C> {
-    type Partition = P;
-    type Object = O;
-    type Container = C;
-
-    fn state(&self) -> &NodeState<O, C> {
-        &self.state
-    }
-
-    fn partition(&self) -> &P {
-        &self.partition
-    }
-}
 
 
 /// An N-dimensional tree
@@ -173,7 +87,6 @@ impl<P, O, D> Tree<P,  O, D>
               S: Fn(&O) -> D,
               C: Fn(&D, &D) -> D,
     {
-        let mut objects = objects;
         let mut tree = Tree::empty(partition, default.clone());
         for object in objects {
             tree.insert(object, default.clone());
@@ -184,17 +97,22 @@ impl<P, O, D> Tree<P,  O, D>
 }
 
 
-impl<P, O, D> Node for Tree<P, O, D> {
+impl<P: Clone, O, D> Node for Tree<P, O, D> {
     type Partition = P;
     type Object = O;
     type Container = Vec<Tree<P, O, D>>;
 
-    fn state(&self) -> &NodeState<O, Vec<Tree<P, O, D>>> {
-        &self.state
+    fn state(&self) -> NodeState<&O, &Vec<Tree<P, O, D>>> {
+        use traits::NodeState::*;
+        match self.state {
+            Empty => Empty,
+            Leaf(ref obj) => Leaf(obj),
+            Branch(ref vec) => Branch(vec),
+        }
     }
 
-    fn partition(&self) -> &P {
-        &self.partition
+    fn partition(&self) -> P {
+        self.partition.clone()
     }
 }
 
@@ -206,49 +124,24 @@ impl<P, O, D> AssociatedData for Tree<P, O, D> {
     }
 }
 
-impl<P, O, D> DataQuery for Tree<P, O, D> {
-    fn query_data<R, F>(&self, recurse: &R, f: &mut F)
-        where R: Fn(&Tree<P, O, D>) -> bool,
-              F: FnMut(&D),
-    {
-        match self.state {
-            NodeState::Branch(ref nodes) if recurse(self) =>
-                for node in nodes.iter() {
-                    node.query_data(recurse, f)
-                },
-            _ => f(&self.data),
-        }
-    }
-}
-
-impl<P, O, D> ObjectQuery for Tree<P, O, D> {
-    fn query_objects<R, F>(&self, recurse: &R, f: &mut F)
-        where R: Fn(&Tree<P, O, D>) -> bool,
-              F: FnMut(&O),
-    {
-        match self.state {
-            NodeState::Branch(ref nodes) if recurse(self) =>
-                for node in nodes.iter() {
-                    node.query_objects(recurse, f)
-                },
-            NodeState::Leaf(ref obj) => f(obj),
-            _ => (),
-        }
-    }
+impl<'a, P: Clone + 'a, O: 'a, D: 'a> IntoIterator for &'a Tree<P, O, D> {
+    type Item = &'a O;
+    type IntoIter = Iter<'a, Tree<P, O, D>>;
+    fn into_iter(self) -> Iter<'a, Tree<P, O, D>> { Iter::new(self) }
 }
 
 
 #[cfg(test)]
 mod test {
-    use super::{Tree, PureTree};
-    use tree::{NodeState, Node, ObjectQuery, Positioned};
-    use partition::{Interval, Ncube};
-    use std::rand::distributions::{IndependentSample, Range};
-    use std::rand::thread_rng;
-    use std::iter::AdditiveIterator;
+    use rand::distributions::{IndependentSample, Range};
+    use rand::thread_rng;
     use test::Bencher;
-    use nalgebra::{Pnt2, FloatPnt, Vec2, Orig};
+    use nalgebra::{Pnt2, Vec2, Orig};
     use quickcheck::quickcheck;
+
+    use partition::Ncube;
+    use traits::{NodeState, Node, Positioned};
+    use super::*;
 
     #[test]
     fn tree_insert_into_empty() {
@@ -262,9 +155,9 @@ mod test {
 
     #[test]
     fn tree_branch_on_second_insert() {
-        let mut n = Tree::empty(Ncube::new(Pnt2::new(0.0f64, 0.0), 10.0f64), ());
-        n.insert(Positioned { object: 1i8, position: Pnt2::new(1.0f64, -2.0) }, ());
-        n.insert(Positioned { object: 2i8, position: Pnt2::new(2.0, 1.0) }, ());
+        let mut n = Tree::empty(Ncube::new(Pnt2::new(0.0, 0.0), 10.0), ());
+        n.insert(Positioned { object: 1i32, position: Pnt2::new(1.0, -2.0) }, ());
+        n.insert(Positioned { object: 2, position: Pnt2::new(2.0, 1.0) }, ());
         match n.state {
             NodeState::Branch(nodes) => {
                 for k in 1..3 {
@@ -334,42 +227,6 @@ mod test {
     }
 
     #[bench]
-    fn pure_tree_binary_new_1000(b: &mut Bencher) {
-        let coord_dist = Range::new(-1.0f64, 1.0);
-        let mut rng = thread_rng();
-        let vec = (0..1000).map(|_| Positioned {
-            object: (),
-            position: coord_dist.ind_sample(&mut rng),
-        }).collect::<Vec<_>>();
-        b.iter(move || {
-            PureTree::new(
-                vec.into_iter(),
-                Interval::new(-1.0, 1.0),
-            )
-        })
-    }
-
-/*
-    #[bench]
-    fn pure_tree_quad_new_1000(b: &mut Bencher) {
-        let coord_dist = Range::new(-1.0f64, 1.0);
-        let mut rng = thread_rng();
-        let vec: Vec<_> = (0..1000).map(|_| Positioned {
-            object: (),
-            position: Pnt2::new(
-                coord_dist.ind_sample(&mut rng),
-                coord_dist.ind_sample(&mut rng)
-            ),
-        }).collect();
-        b.iter(|| {
-            PureTree::new(
-                vec.iter().map(|a| a.clone()),
-                Ncube::new(Orig::orig(), 2.0),
-            )
-        })
-    }
-*/
-    #[bench]
     fn tree_quad_with_center_of_mass_new_1000(b: &mut Bencher) {
         let coord_dist = Range::new(-1.0f64, 1.0);
         let mut rng = thread_rng();
@@ -390,34 +247,4 @@ mod test {
             )
         })
     }
-/*
-    #[bench]
-    fn pure_tree_query_objects(b: &mut Bencher) {
-        let coord_dist = Range::new(-1.0f64, 1.0);
-        let mut rng = thread_rng();
-        let search_radius = 0.3;
-        let tree = PureTree::new(
-            (0..1000).map(|_| Positioned {
-                object: (),
-                position: Pnt2::new(
-                    coord_dist.ind_sample(&mut rng),
-                    coord_dist.ind_sample(&mut rng)
-                ),
-            }),
-            Ncube::new(Orig::orig(), 200.0),
-        );
-        b.iter(|| {
-            // Count the number of objects within the search radius 10000 times
-            (0..10000)
-                .map(|_| {
-                    let mut i: i32 = 0;
-                    tree.query_objects(
-                        &|node| node.partition().center().dist(&Orig::orig()) < search_radius + node.partition().width() / 2.0,
-                        &mut |other| if other.position.dist(&Orig::orig()) < search_radius {i += 1},
-                    );
-                    i
-                })
-                .sum()
-        })
-    }*/
 }

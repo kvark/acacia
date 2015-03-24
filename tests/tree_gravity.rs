@@ -1,6 +1,6 @@
 //! Simple integration tests oriented towards gravity computations
 
-#![allow(unstable)] // FIXME: remove this towards Rust 1.0
+#![feature(core)]
 
 extern crate acacia;
 extern crate nalgebra;
@@ -10,8 +10,7 @@ use std::num::Float;
 use std::cmp::partial_max;
 use nalgebra::{ApproxEq, Pnt2, Pnt3, FloatPnt, Vec2, Vec3, zero, Norm, Orig};
 use quickcheck::{TestResult, quickcheck};
-use acacia::tree::{Node, AssociatedData, DataQuery, Positioned};
-use acacia::ntree::Tree;
+use acacia::{Tree, Node, AssociatedData, DataQuery, Positioned};
 use acacia::partition::Ncube;
 
 
@@ -23,8 +22,8 @@ fn tree_center_of_mass() {
             return TestResult::discard();
         }
         // No two points should be in the same place
-        for i in range(0, data.len()) {
-            for j in range(0, i) {
+        for i in 0..data.len() {
+            for j in 0..i {
                 let (_, pi) = data[i];
                 let (_, pj) = data[j];
                 if pi == pj {
@@ -74,8 +73,8 @@ fn tree_gravity_approx() {
             return TestResult::discard();
         }
         // No two stars should be in the same place
-        for i in range(0, starfield.len()) {
-            for j in range(0, i) {
+        for i in 0..starfield.len() {
+            for j in 0..i {
                 let (_, pi) = starfield[i];
                 let (_, pj) = starfield[j];
                 if pi == pj {
@@ -90,7 +89,7 @@ fn tree_gravity_approx() {
         }
         let test_point = pnt(test_point);
         // Newton's law of gravity for two point masses (with G = 1)
-        let newton = |&:(m, p1): (f64, Pnt3<f64>), p2| {
+        let newton = |(m, p1): (f64, Pnt3<f64>), p2| {
             let diff: Vec3<f64> = p1 - p2;
             let r = diff.norm();
             diff * (m / r.powi(3))
@@ -118,18 +117,16 @@ fn tree_gravity_approx() {
                 }
         );
         let theta = 0.5; // A bit arbitrary but this appears to work
-        let mut tree_gravity: Vec3<_> = zero();
-        tree.query_data(
-            &|node| {
+        let tree_gravity: Vec3<_> =
+            tree.query_data(|node| {
                 let &(ref center_of_mass, _) = node.data();
                 let d = FloatPnt::dist(&test_point, center_of_mass);
                 let delta = FloatPnt::dist(&node.partition().center(), center_of_mass);
                 d < node.partition().width() / theta + delta
-            },
-            &mut |&(com, m)| {
-                tree_gravity = tree_gravity + newton((m, com), test_point);
-            },
-        );
+            })
+            .map(|&(com, m)| newton((m, com), test_point))
+            .fold(zero(), |a, b| a + b);
+
         // Now the tree gravity should approximate the exact one, within 10 %
         TestResult::from_bool(simple_gravity.approx_eq_eps(&tree_gravity, &(0.1 * simple_gravity.norm())))
     }

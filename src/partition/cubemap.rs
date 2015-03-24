@@ -3,15 +3,14 @@
 use nalgebra::{BaseFloat, Vec3, Vec2, Norm, zero, one};
 #[cfg(any(test, feature = "arbitrary"))]
 use quickcheck::{Arbitrary, Gen};
-use partition::{Partition, Subdivide};
-use partition::UnitQuad;
+use partition::{Partition, Subdivide, UnitQuad};
 
 
 /// An axis direction
 ///
 /// This effectively distinguishes whether we are moving in positive or negative
 /// direction along some axis, i.e. +X vs -X, +Y vs. -Y etc.
-#[derive(Copy, Clone, Show, PartialEq, Hash, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 pub enum Direction {
     /// Positive direction
     Positive,
@@ -33,7 +32,7 @@ impl Arbitrary for Direction {
 
 
 /// A coordinate axis
-#[derive(Copy, Clone, Show, PartialEq, Hash, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 pub enum Axis {
     /// X-axis
     X,
@@ -68,7 +67,7 @@ pub fn axis_vector_triple<T: BaseFloat>(axis: Axis, direction: Direction) -> [Ve
     let _0: T = zero();
     let sgn = match direction {
         Direction::Positive => _p,
-        Direction::Negative => -_n,
+        Direction::Negative => _n,
     };
     match axis {
         Axis::X => [
@@ -91,7 +90,7 @@ pub fn axis_vector_triple<T: BaseFloat>(axis: Axis, direction: Direction) -> [Ve
 
 
 /// A quad-shaped partition of the side of a cubemap
-#[derive(Copy, Clone, Show, PartialEq, Hash, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 pub struct Quad {
     /// Normal axis of the quad normal
     pub axis: Axis,
@@ -116,9 +115,7 @@ impl Quad {
 
     /// The center of this quad on the unit sphere
     pub fn center_on_sphere<T: BaseFloat>(&self) -> Vec3<T> {
-        let mut c = self.center_on_cube();
-        c.normalize();
-        c
+        self.center_on_cube().normalize()
     }
 }
 
@@ -173,7 +170,7 @@ impl Arbitrary for Quad {
 /// a 2-sphere (which is a subset of the full ℝ³). It is either the full
 /// spherical dome or some subdivision stage on one of the six quad-shape sides
 /// obtained by projecting the sphere onto a cube.
-#[derive(Copy, Clone, Show, PartialEq, Hash, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 pub enum CubeMap {
     /// The full sphere
     Sphere,
@@ -254,5 +251,17 @@ mod test {
             n.cross(&t1) == t2
         }
         quickcheck(check as fn(Axis, Direction) -> bool);
+    }
+
+    #[test]
+    fn axis_vector_triples_concrete() {
+        assert_eq!(
+            axis_vector_triple::<f64>(Axis::X, Direction::Negative),
+            [-Vec3::x(), -Vec3::y(), Vec3::z()]
+        );
+        assert_eq!(
+            axis_vector_triple::<f64>(Axis::X, Direction::Positive),
+            [Vec3::x(), Vec3::y(), Vec3::z()]
+        );
     }
 }

@@ -11,7 +11,7 @@ use partition::{Partition, Subdivide};
 
 
 /// An N-cube based partitioning scheme
-#[derive(Copy, Clone, Show)]
+#[derive(Copy, Clone, Debug)]
 pub struct Ncube<P, S> {
     center: P,
     width: S,
@@ -25,12 +25,14 @@ impl<P, S: PartialOrd + Zero> Ncube<P, S> {
     }
 }
 
-impl<P: Copy, S: Copy> Ncube<P, S> {
+impl<P, S: Clone> Ncube<P, S> {
     /// The width of the N-cube
-    pub fn width(&self) -> S { self.width }
+    pub fn width(&self) -> S { self.width.clone() }
+}
 
+impl<P: Clone, S> Ncube<P, S> {
     /// The center of the N-cube
-    pub fn center(&self) -> P { self.center }
+    pub fn center(&self) -> P { self.center.clone() }
 }
 
 impl<P, S> Subdivide for Ncube<P, S>
@@ -41,12 +43,12 @@ impl<P, S> Subdivide for Ncube<P, S>
         let _2 = cast(2.0f64).unwrap();
         let dim = Dim::dim(None::<P>);
         let new_width = self.width / _2;
-        (0..2.pow(dim))
-            .map(|n| {
+        (0..2.pow(dim as u32))
+            .map(|n: i32| {
                 let mut new_center = self.center;
                 let dx = new_width / _2;
-                for i in (0..dim) {
-                    new_center[i] = new_center[i] + match n / 2.pow(i) % 2 {
+                for i in 0..dim {
+                    new_center[i] = new_center[i] + match n / 2.pow(i as u32) % 2 {
                         0 => -dx,
                         1 => dx,
                         _ => unreachable!(),
@@ -75,7 +77,7 @@ impl<P, S> Partition<P> for Ncube<P, S>
     }
 
     fn dispatch(&self, elem: &P) -> usize {
-        range(0, Dim::dim(None::<P>))
+        (0..Dim::dim(None::<P>))
             .map(|k| if elem[k] < self.center[k] {0} else {1 << k})
             .sum()
     }
